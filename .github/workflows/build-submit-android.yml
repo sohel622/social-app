@@ -1,4 +1,4 @@
-name: Build 📱Android APK
+name: Build Android APK
 
 on:
   workflow_dispatch:
@@ -82,30 +82,26 @@ jobs:
           }
           EOF
 
-      - name: 🛠️ Remove All Broken iOS Plugins & Prebuild
+      - name: 🛠️ Neutralize All Custom Plugins & Prebuild
         run: |
-          # Create all required stub files for both plugins everywhere they could be searched
-          for dir in plugins modules app/plugins app/modules; do
-            mkdir -p "$dir/shareExtension" "$dir/starterPackAppClipExtension"
-            cat << 'EOF' > "$dir/shareExtension/withShareExtension.js"
-            module.exports = function(c) { return c; };
-          EOF
-            cat << 'EOF' > "$dir/shareExtension/withExtensionEntitlements.js"
-            module.exports = function(c) { return c; };
-          EOF
-            cat << 'EOF' > "$dir/starterPackAppClipExtension/withStarterPackAppClip.js"
-            module.exports = function(c) { return c; };
-          EOF
-            cat << 'EOF' > "$dir/starterPackAppClipExtension/withClipEntitlements.js"
-            module.exports = function(c) { return c; };
-          EOF
+          # 1. Create a dummy universal handler for every single possible extension plugin
+          for ext in shareExtension starterPackAppClipExtension notificationsExtension; do
+            for base in plugins app/plugins modules app/modules; do
+              mkdir -p "$base/$ext"
+              echo "module.exports = function(config) { return config; };" > "$base/$ext/withShareExtension.js"
+              echo "module.exports = function(config) { return config; };" > "$base/$ext/withExtensionEntitlements.js"
+              echo "module.exports = function(config) { return config; };" > "$base/$ext/withStarterPackAppClip.js"
+              echo "module.exports = function(config) { return config; };" > "$base/$ext/withClipEntitlements.js"
+              echo "module.exports = function(config) { return config; };" > "$base/$ext/withNotificationsExtension.js"
+            done
           done
 
-          # Strip problematic iOS plugins directly from app.config.js
+          # 2. Patch app.config.js to completely remove all custom extension imports
           node -e '
             const fs = require("fs");
             if (fs.existsSync("app.config.js")) {
               let code = fs.readFileSync("app.config.js", "utf8");
+              code = code.replace(/.*notificationsExtension.*/g, "");
               code = code.replace(/.*shareExtension.*/g, "");
               code = code.replace(/.*starterPackAppClipExtension.*/g, "");
               fs.writeFileSync("app.config.js", code);
