@@ -44,18 +44,53 @@ jobs:
         run: |
           pnpm intl:compile || true
 
-      - name: ⚙️ Setup Local Environment
+      - name: ⚙️ Setup Local Environment & Google Services
         run: |
           touch .env
           echo "EXPO_PUBLIC_ENV=development" >> .env
           echo "BSKY_SERVICE=https://bsky.social" >> .env
+          
+          # Create dummy google-services.json to satisfy expo prebuild
+          cat << 'EOF' > google-services.json
+          {
+            "project_info": {
+              "project_number": "123456789012",
+              "project_id": "bluesky-client",
+              "storage_bucket": "bluesky-client.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:123456789012:android:0123456789abcdef",
+                  "android_client_info": {
+                    "package_name": "xyz.blueskyweb.app"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [
+                  {
+                    "current_key": "fake_api_key_for_building_apk_only"
+                  }
+                ],
+                "services": {
+                  "appinvite_service": {
+                    "other_platform_oauth_client": []
+                  }
+                }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
 
       - name: 🛠️ Prebuild Android Project
         run: |
           pnpm exec expo prebuild --platform android --clean --no-install
 
-      - name: 🔑 Ensure Android Keystore
+      - name: 🔑 Ensure Android Keystore & Copy Google Services
         run: |
+          mkdir -p android/app
+          cp google-services.json android/app/google-services.json || true
           cd android/app
           keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || true
 
@@ -63,7 +98,7 @@ jobs:
         run: |
           cd android
           chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon -x test -x lint
+          ./gradlew assembleDebug --no-daemon -x test -x lint -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
 
       - name: 🚀 Upload APK Artifact
         uses: actions/upload-artifact@v4
