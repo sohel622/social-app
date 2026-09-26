@@ -1,271 +1,60 @@
-name: Build and Submit Android
+name: Build Android APK
 
 on:
   workflow_dispatch:
-    inputs:
-      sourceRef:
-        type: string
-        description: Source ref to build; use a full commit SHA for immutable builds
-        required: false
-        default: ''
-      profile:
-        type: choice
-        description: Build profile to use
-        options:
-          - testflight-android
-          - production
-      submit:
-        type: boolean
-        description: Submit the build to Google Play (disable to only produce the APK artifact)
-        default: false
-  workflow_call:
-    inputs:
-      sourceRef:
-        type: string
-        description: Source ref to build; use a full commit SHA for immutable builds
-        required: false
-        default: ''
-      profile:
-        type: string
-        description: Build profile to use
-        required: true
-      submit:
-        type: boolean
-        description: Submit the build to Google Play (disable to only produce the APK artifact)
-        default: false
-      runner:
-        type: string
-        description: Runner for the build job
-        required: false
-        default: 'ubuntu-latest'
-    outputs:
-      source-sha:
-        description: Exact commit used for the build
-        value: ${{ jobs.build.outputs.source-sha }}
-      package-version:
-        description: Version from package.json
-        value: ${{ jobs.build.outputs.package-version }}
-      version-code:
-        description: Android version code
-        value: ${{ jobs.build.outputs.version-code }}
-    secrets:
-      EXPO_TOKEN:
-        required: false
-      ENV_TOKEN:
-        required: false
-      SENTRY_DSN:
-        required: false
-      BITDRIFT_API_KEY:
-        required: false
-      EXPO_PUBLIC_GCP_PROJECT_ID:
-        required: false
-      GOOGLE_SERVICES_TOKEN:
-        required: false
-      SENTRY_AUTH_TOKEN:
-        required: false
-      SLACK_CLIENT_ALERT_WEBHOOK:
-        required: false
-      ANDROID_KEYSTORE_BASE64:
-        required: false
-      ANDROID_KEYSTORE_PASSWORD:
-        required: false
-      ANDROID_KEY_ALIAS:
-        required: false
-      ANDROID_KEY_PASSWORD:
-        required: false
-
-# Deploys happen via EAS using EXPO_TOKEN; the GITHUB_TOKEN only checks out code
-permissions:
-  contents: write
 
 jobs:
-  build:
-    name: Build Android
-    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
-    concurrency:
-      group: android-build
-      cancel-in-progress: false
-    outputs:
-      source-sha: ${{ steps.source.outputs.sha }}
-      package-version: ${{ steps.get-build-info.outputs.PACKAGE_VERSION }}
-      version-code: ${{ steps.get-build-info.outputs.BSKY_ANDROID_VERSION_CODE }}
+  build-apk:
+    name: Build Developer Android APK
+    runs-on: ubuntu-latest
     steps:
-      - name: ⬇️ Checkout
+      - name: ⬇️ Checkout Repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.sourceRef || github.sha }}
-          fetch-depth: 5
 
-      - name: Resolve build source
-        id: source
-        run: |
-          echo "Building source: $(git rev-parse HEAD)"
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: 🔧 Setup Expo project
-        uses: ./.github/actions/setup-expo-project
-        with:
-          expo-token: ${{ secrets.EXPO_TOKEN }}
-
-      - uses: actions/setup-java@v4
+      - name: ☕ Setup Java (JDK 17)
+        uses: actions/setup-java@v4
         with:
           distribution: "temurin"
           java-version: "17"
 
-      - name: 🔤 Compile translations
-        uses: ./.github/actions/compile-i18n
-
-      # EXPO_PUBLIC_ENV is handled in eas.json
-      - name: ✏️ Write environment variables
-        id: env
-        uses: ./.github/actions/write-env
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          env-token: ${{ secrets.ENV_TOKEN }}
-          sentry-dsn: ${{ secrets.SENTRY_DSN }}
-          bitdrift-api-key: ${{ secrets.BITDRIFT_API_KEY }}
-          gcp-project-id: ${{ secrets.EXPO_PUBLIC_GCP_PROJECT_ID }}
-          google-services-token: ${{ secrets.GOOGLE_SERVICES_TOKEN }}
+          node-version: 20
 
-      - name: 🏗️ EAS Build
-        uses: ./.github/actions/eas-local-build
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@v3
         with:
-          platform: android
-          profile: ${{ inputs.profile || 'testflight-android' }}
-          output: build.aab
-          bump-build-number: "true"
-          sentry-auth-token: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          sentry-release: ${{ steps.env.outputs.release-version }}
-          sentry-dist: ${{ steps.env.outputs.bundle-identifier }}
+          version: 9
 
-      - name: 📚 Get version from package.json
-        id: get-build-info
-        run: bash scripts/setGitHubOutput.sh
+      - name: 📥 Install Dependencies
+        run: pnpm install --frozen-lockfile
 
-      - name: 🚀 Upload AAB artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-aab-${{ github.run_id }}
-          retention-days: 1
-          if-no-files-found: error
-          path: build.aab
-
-      - name: 📝 Write build summary
-        env:
-          REMOTE_VERSION_CODE: ${{ steps.get-build-info.outputs.BSKY_ANDROID_VERSION_CODE }}
+      - name: ⚙️ Setup Environment & Firebase Fake Config
         run: |
-          {
-            echo "### Android build number"
-            echo
-            echo "\`$REMOTE_VERSION_CODE\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  submit:
-    name: Submit to Google Play
-    runs-on: ubuntu-latest
-    needs: [build]
-    if: ${{ inputs.submit == true }}
-    steps:
-      - name: ⬇️ Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.build.outputs.source-sha }}
-          fetch-depth: 5
-
-      - name: 🔧 Setup Expo project
-        uses: ./.github/actions/setup-expo-project
-        with:
-          expo-token: ${{ secrets.EXPO_TOKEN }}
-
-      - name: ⬇️ Download AAB artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: android-aab-${{ github.run_id }}
-
-      - name: 🚀 Submit to Google Play
-        env:
-          PROFILE: ${{ inputs.profile || 'testflight-android' }}
-        run: pnpm eas submit -p android --profile $PROFILE --non-interactive --path build.aab
-
-  universalApk:
-    name: Build universal APK
-    runs-on: ubuntu-latest
-    needs: [build]
-    outputs:
-      apk-artifact-name: build-${{ steps.timestamp.outputs.time }}.apk
-    steps:
-      - name: ⬇️ Download AAB artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: android-aab-${{ github.run_id }}
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: "temurin"
-          java-version: "17"
-
-      - name: 🔧 Setup bundletool
-        uses: amyu/setup-bundletool@v1.1
-        with:
-          version: "1.18.3"
-
-      - name: 🔑 Build APK
-        run: |
-          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > keystore.jks
-            bundletool build-apks \
-              --bundle=build.aab \
-              --output=universal.apks \
-              --mode=universal \
-              --ks=keystore.jks \
-              --ks-pass=pass:"${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
-              --ks-key-alias="${{ secrets.ANDROID_KEY_ALIAS }}" \
-              --key-pass=pass:"${{ secrets.ANDROID_KEY_PASSWORD }}"
-          else
-            bundletool build-apks \
-              --bundle=build.aab \
-              --output=universal.apks \
-              --mode=universal
+          cp .env.example .env || touch .env
+          echo "EXPO_PUBLIC_ENV=development" >> .env
+          if [ -f google-services.json.example ]; then
+            cp google-services.json.example google-services.json
+          elif [ -f android/app/google-services.json.example ]; then
+            cp android/app/google-services.json.example android/app/google-services.json
           fi
 
-      - name: 📋 Rename to .zip for extraction
-        run: mv universal.apks universal.zip
+      - name: 🛠️ Generate Native Android Project
+        run: pnpm exec expo prebuild --platform android --clean
 
-      - name: 📦 Extract universal APK
-        run: unzip -p universal.zip universal.apk > build.apk
+      - name: 🐘 Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
 
-      - name: ⏰ Get a timestamp
-        id: timestamp
-        run: echo "time=$(date -u +'\%m-\%d-\%H-\%M-\%S')" >> "$GITHUB_OUTPUT"
+      - name: 🔨 Build Debug APK
+        run: |
+          cd android
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon -x test -x lint
 
       - name: 🚀 Upload APK Artifact
-        id: upload-artifact
         uses: actions/upload-artifact@v4
         with:
-          retention-days: 30
-          compression-level: 6
-          name: build-${{ steps.timestamp.outputs.time }}.apk
-          path: build.apk
-
-  attachToRelease:
-    name: Attach APK to GitHub Release
-    runs-on: ubuntu-latest
-    needs: [build, universalApk]
-    if: ${{ github.ref_type == 'tag' }}
-    permissions:
-      contents: write
-    steps:
-      - name: ⬇️ Download APK artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.universalApk.outputs.apk-artifact-name }}
-
-      - name: 🏷️ Rename APK for release
-        run: cp build.apk "Bluesky-${{ needs.build.outputs.package-version || 'latest' }}.apk"
-
-      - name: 📎 Attach APK to GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-          APK: Bluesky-${{ needs.build.outputs.package-version || 'latest' }}.apk
-        run: |
-          gh release upload "$TAG" "$APK" --clobber
+          name: Bluesky-Android-Debug-APK
+          path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 7
