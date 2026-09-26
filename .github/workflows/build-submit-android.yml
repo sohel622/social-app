@@ -50,7 +50,6 @@ jobs:
           echo "EXPO_PUBLIC_ENV=development" >> .env
           echo "BSKY_SERVICE=https://bsky.social" >> .env
           
-          # Create dummy google-services.json to satisfy expo prebuild
           cat << 'EOF' > google-services.json
           {
             "project_info": {
@@ -83,8 +82,17 @@ jobs:
           }
           EOF
 
-      - name: 🛠️ Prebuild Android Project
+      - name: 🛠️ Clean iOS Plugins & Prebuild Android
         run: |
+          # Disable iOS AppClip plugins from crashing Android config
+          node -e '
+            const fs = require("fs");
+            if (fs.existsSync("app.config.js")) {
+              let content = fs.readFileSync("app.config.js", "utf8");
+              content = content.replace(/starterPackAppClipExtension/g, "nonExistentPluginDummy");
+              fs.writeFileSync("app.config.js", content);
+            }
+          ' || true
           pnpm exec expo prebuild --platform android --clean --no-install
 
       - name: 🔑 Ensure Android Keystore & Copy Google Services
