@@ -20,36 +20,36 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
-      - name: 🟢 Setup Node.js 20
+      - name: 🟢 Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
-      - name: 📦 Enable Corepack & Setup pnpm
-        run: |
-          corepack enable
-          corepack prepare pnpm@latest --activate
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
 
       - name: 📥 Install Dependencies
         run: |
           pnpm install --no-frozen-lockfile
 
-      - name: ⚙️ Setup Environment
+      - name: ⚙️ Setup Local Environment
         run: |
           touch .env
           echo "EXPO_PUBLIC_ENV=development" >> .env
           echo "BSKY_SERVICE=https://bsky.social" >> .env
 
-      - name: 🛠️ Prebuild Android
+      - name: 🛠️ Prebuild Android Project
         run: |
-          pnpm dlx expo prebuild --platform android --clean --no-install
+          pnpm exec expo prebuild --platform android --clean --no-install
 
-      - name: 🔑 Setup Debug Keystore
+      - name: 🔑 Ensure Android Keystore
         run: |
           cd android/app
           keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || true
 
-      - name: 🔨 Build Android Debug APK
+      - name: 🔨 Build Debug APK
         run: |
           cd android
           chmod +x ./gradlew
@@ -58,6 +58,6 @@ jobs:
       - name: 🚀 Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Bluesky-Android.apk
+          name: Bluesky-Android-Debug
           path: android/app/build/outputs/apk/debug/*.apk
           retention-days: 14
