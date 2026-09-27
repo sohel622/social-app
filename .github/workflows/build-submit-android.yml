@@ -20,10 +20,10 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
-      - name: 🟢 Setup Node.js 22
+      - name: 🟢 Setup Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
 
       - name: 📦 Setup pnpm
         uses: pnpm/action-setup@v4
@@ -47,7 +47,7 @@ jobs:
       - name: ⚙️ Setup Local Environment & Google Services
         run: |
           touch .env
-          echo "EXPO_PUBLIC_ENV=production" >> .env
+          echo "EXPO_PUBLIC_ENV=development" >> .env
           echo "BSKY_SERVICE=https://bsky.social" >> .env
           
           cat << 'EOF' > google-services.json
@@ -82,52 +82,30 @@ jobs:
           }
           EOF
 
-      - name: 🛠️ Neutralize All Custom Plugins & Prebuild
+      - name: 🛠️ Prebuild Android Project
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          for ext in shareExtension starterPackAppClipExtension notificationsExtension; do
-            for base in plugins app/plugins modules app/modules; do
-              mkdir -p "$base/$ext"
-              echo "module.exports = function(config) { return config; };" > "$base/$ext/withShareExtension.js"
-              echo "module.exports = function(config) { return config; };" > "$base/$ext/withExtensionEntitlements.js"
-              echo "module.exports = function(config) { return config; };" > "$base/$ext/withStarterPackAppClip.js"
-              echo "module.exports = function(config) { return config; };" > "$base/$ext/withClipEntitlements.js"
-              echo "module.exports = function(config) { return config; };" > "$base/$ext/withNotificationsExtension.js"
-            done
-          done
-
-          node -e '
-            const fs = require("fs");
-            if (fs.existsSync("app.config.js")) {
-              let code = fs.readFileSync("app.config.js", "utf8");
-              code = code.replace(/.*notificationsExtension.*/g, "");
-              code = code.replace(/.*shareExtension.*/g, "");
-              code = code.replace(/.*starterPackAppClipExtension.*/g, "");
-              fs.writeFileSync("app.config.js", code);
-            }
-          ' || true
-
           pnpm exec expo prebuild --platform android --clean --no-install
 
-      - name: 🔑 Configure Release Keystore
+      - name: 🔑 Configure Android Directories & Keystore
         run: |
           mkdir -p android/app
           cp google-services.json android/app/google-services.json || true
           cd android/app
-          keytool -genkey -v -keystore release.keystore -storepass android -alias androidreleasekey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Bluesky,O=Bluesky,C=US" || true
-          
-          # Configure build.gradle to use this keystore for release builds
-          sed -i '/signingConfigs {/a \        release {\n            storeFile file("release.keystore")\n            storePassword "android"\n            keyAlias "androidreleasekey"\n            keyPassword "android"\n        }' build.gradle
-          sed -i 's/signingConfig signingConfigs.debug/signingConfig signingConfigs.release/g' build.gradle
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || true
 
-      - name: 🔨 Build Standalone Release APK
+      - name: 🔨 Build Standalone APK
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
         run: |
           cd android
           chmod +x ./gradlew
-          ./gradlew assembleRelease --no-daemon -x test -x lint -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
+          ./gradlew assembleDebug --no-daemon -x test -x lint -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
 
       - name: 🚀 Upload Standalone APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Bluesky-Standalone-App
-          path: android/app/build/outputs/apk/release/*.apk
+          path: android/app/build/outputs/apk/debug/*.apk
           retention-days: 14
