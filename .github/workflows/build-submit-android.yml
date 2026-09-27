@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-apk:
@@ -123,9 +123,25 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon -x test -x lint -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
 
-      - name: 🚀 Upload Standalone APK Artifact
+      - name: 📦 Prepare APK file
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk ./Bluesky-App.apk
+
+      - name: 🚀 Release Direct APK (No Zip)
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Bluesky APK Build #${{ github.run_number }}
+          files: ./Bluesky-App.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🗄️ Upload APK Artifact
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: Bluesky-Standalone-App
-          path: android/app/build/outputs/apk/debug/*.apk
+          path: ./Bluesky-App.apk
           retention-days: 14
+          
