@@ -82,22 +82,29 @@ jobs:
           }
           EOF
 
-      - name: 🛠️ Setup Valid Dummy Plugins & Prebuild
+      - name: 🛠️ Neutralize All Custom Plugins & Prebuild
         run: |
-          create_plugin() {
+          create_dummy() {
             mkdir -p "$(dirname "$1")"
             cat << 'EOF' > "$1"
-          const dummyPlugin = (config) => config;
-          module.exports = dummyPlugin;
-          module.exports.default = dummyPlugin;
+          const dummy = (config) => config;
+          module.exports = dummy;
+          module.exports.default = dummy;
+          module.exports.withShareExtension = dummy;
+          module.exports.withShareExtensions = dummy;
+          module.exports.withExtensionEntitlements = dummy;
+          module.exports.withStarterPackAppClip = dummy;
+          module.exports.withClipEntitlements = dummy;
+          module.exports.withNotificationsExtension = dummy;
           EOF
           }
 
-          create_plugin "plugins/starterPackAppClipExtension/withClipEntitlements.js"
-          create_plugin "plugins/starterPackAppClipExtension/withStarterPackAppClip.js"
-          create_plugin "plugins/shareExtension/withShareExtension.js"
-          create_plugin "plugins/shareExtension/withExtensionEntitlements.js"
-          create_plugin "plugins/notificationsExtension/withNotificationsExtension.js"
+          create_dummy "plugins/starterPackAppClipExtension/withClipEntitlements.js"
+          create_dummy "plugins/starterPackAppClipExtension/withStarterPackAppClip.js"
+          create_dummy "plugins/shareExtension/withShareExtension.js"
+          create_dummy "plugins/shareExtension/withShareExtensions.js"
+          create_dummy "plugins/shareExtension/withExtensionEntitlements.js"
+          create_dummy "plugins/notificationsExtension/withNotificationsExtension.js"
 
           pnpm exec expo prebuild --platform android --clean --no-install
 
