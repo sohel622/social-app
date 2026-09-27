@@ -44,7 +44,7 @@ jobs:
         run: |
           pnpm intl:compile || true
 
-      - name: ⚙️ Setup Production Environment & Google Services
+      - name: ⚙️ Setup Environment & Google Services
         run: |
           touch .env
           echo "EXPO_PUBLIC_ENV=production" >> .env
@@ -108,42 +108,40 @@ jobs:
 
           pnpm exec expo prebuild --platform android --clean --no-install
 
-      - name: 🔑 Configure Keystore for Release Signing
+      - name: 📦 Pre-bundle Production JavaScript (Standalone Offline Mode)
+        run: |
+          mkdir -p android/app/src/main/assets
+          NODE_OPTIONS="--max-old-space-size=4096" npx react-native bundle \
+            --platform android \
+            --dev false \
+            --entry-file index.js \
+            --bundle-output android/app/src/main/assets/index.android.bundle \
+            --assets-dest android/app/src/main/res/ || true
+
+      - name: 🔑 Configure Keystore
         run: |
           mkdir -p android/app
           cp google-services.json android/app/google-services.json || true
           cd android/app
-          keytool -genkey -v -keystore release.keystore -storepass android -alias androidreleasekey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Release,O=Android,C=US" || true
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || true
 
-      - name: 🔨 Compile Production Standalone APK (Bundled JS)
-        env:
-          NODE_OPTIONS: "--max-old-space-size=4096"
+      - name: 🔨 Compile Standalone APK
         run: |
           cd android
           chmod +x ./gradlew
-          ./gradlew assembleRelease --no-daemon -x test -x lint \
-            -Pandroid.injected.signing.store.file=release.keystore \
-            -Pandroid.injected.signing.store.password=android \
-            -Pandroid.injected.signing.key.alias=androidreleasekey \
-            -Pandroid.injected.signing.key.password=android \
-            -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
+          ./gradlew assembleDebug --no-daemon -x test -x lint -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
 
       - name: 📦 Prepare APK file
         run: |
-          APK_PATH=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
-          if [ -z "$APK_PATH" ]; then
-            APK_PATH=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
-          fi
-          echo "Found APK at: $APK_PATH"
-          cp "$APK_PATH" ./Flashgram-Full.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk ./Flashgram.apk
 
-      - name: 🚀 Release Direct Full APK (No Zip)
+      - name: 🚀 Release Direct APK (No Zip)
         uses: softprops/action-gh-release@v2
         if: success()
         with:
-          tag_name: v1.0.${{ github.run_number }}
+          tag_name: release-${{ github.run_number }}
           name: Flashgram Full APK #${{ github.run_number }}
-          files: ./Flashgram-Full.apk
+          files: ./Flashgram.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -152,6 +150,5 @@ jobs:
         if: always()
         with:
           name: Flashgram-Standalone-APK
-          path: ./Flashgram-Full.apk
+          path: ./Flashgram.apk
           retention-days: 14
-          
