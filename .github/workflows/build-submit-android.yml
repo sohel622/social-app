@@ -82,28 +82,22 @@ jobs:
           }
           EOF
 
-      - name: 🛠️ Setup Dummy Native Modules & Prebuild
+      - name: 🛠️ Setup Valid Dummy Plugins & Prebuild
         run: |
-          mkdir -p plugins/starterPackAppClipExtension
-          cat << 'EOF' > plugins/starterPackAppClipExtension/withClipEntitlements.js
-          module.exports = function(config) { return config; };
+          create_plugin() {
+            mkdir -p "$(dirname "$1")"
+            cat << 'EOF' > "$1"
+          const dummyPlugin = (config) => config;
+          module.exports = dummyPlugin;
+          module.exports.default = dummyPlugin;
           EOF
-          cat << 'EOF' > plugins/starterPackAppClipExtension/withStarterPackAppClip.js
-          module.exports = function(config) { return config; };
-          EOF
+          }
 
-          mkdir -p plugins/shareExtension
-          cat << 'EOF' > plugins/shareExtension/withShareExtension.js
-          module.exports = function(config) { return config; };
-          EOF
-          cat << 'EOF' > plugins/shareExtension/withExtensionEntitlements.js
-          module.exports = function(config) { return config; };
-          EOF
-
-          mkdir -p plugins/notificationsExtension
-          cat << 'EOF' > plugins/notificationsExtension/withNotificationsExtension.js
-          module.exports = function(config) { return config; };
-          EOF
+          create_plugin "plugins/starterPackAppClipExtension/withClipEntitlements.js"
+          create_plugin "plugins/starterPackAppClipExtension/withStarterPackAppClip.js"
+          create_plugin "plugins/shareExtension/withShareExtension.js"
+          create_plugin "plugins/shareExtension/withExtensionEntitlements.js"
+          create_plugin "plugins/notificationsExtension/withNotificationsExtension.js"
 
           pnpm exec expo prebuild --platform android --clean --no-install
 
@@ -115,6 +109,8 @@ jobs:
           keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || true
 
       - name: 🔨 Build Standalone APK
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
         run: |
           cd android
           chmod +x ./gradlew
