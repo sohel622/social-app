@@ -46,10 +46,10 @@ module.exports = function (_config) {
   return {
     expo: {
       version: VERSION,
-      name: 'Bluesky',
-      slug: 'bluesky',
-      scheme: 'bluesky',
-      owner: 'blueskysocial',
+      name: 'Flashgram',
+      slug: 'Flashgram',
+      scheme: 'Flashgram',
+      owner: 'Flashgramsocial',
       runtimeVersion: {
         policy: 'appVersion',
       },
