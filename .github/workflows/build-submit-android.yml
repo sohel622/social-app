@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   build-apk:
-    name: Build Android APK
+    name: Build Standalone Android APK
     runs-on: ubuntu-latest
     steps:
       - name: ⬇️ Checkout Repository
@@ -47,7 +47,7 @@ jobs:
       - name: ⚙️ Setup Local Environment & Google Services
         run: |
           touch .env
-          echo "EXPO_PUBLIC_ENV=development" >> .env
+          echo "EXPO_PUBLIC_ENV=production" >> .env
           echo "BSKY_SERVICE=https://bsky.social" >> .env
           
           cat << 'EOF' > google-services.json
@@ -84,7 +84,6 @@ jobs:
 
       - name: 🛠️ Neutralize All Custom Plugins & Prebuild
         run: |
-          # 1. Create a dummy universal handler for every single possible extension plugin
           for ext in shareExtension starterPackAppClipExtension notificationsExtension; do
             for base in plugins app/plugins modules app/modules; do
               mkdir -p "$base/$ext"
@@ -96,7 +95,6 @@ jobs:
             done
           done
 
-          # 2. Patch app.config.js to completely remove all custom extension imports
           node -e '
             const fs = require("fs");
             if (fs.existsSync("app.config.js")) {
@@ -110,22 +108,26 @@ jobs:
 
           pnpm exec expo prebuild --platform android --clean --no-install
 
-      - name: 🔑 Ensure Android Keystore & Copy Google Services
+      - name: 🔑 Configure Release Keystore
         run: |
           mkdir -p android/app
           cp google-services.json android/app/google-services.json || true
           cd android/app
-          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || true
+          keytool -genkey -v -keystore release.keystore -storepass android -alias androidreleasekey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Bluesky,O=Bluesky,C=US" || true
+          
+          # Configure build.gradle to use this keystore for release builds
+          sed -i '/signingConfigs {/a \        release {\n            storeFile file("release.keystore")\n            storePassword "android"\n            keyAlias "androidreleasekey"\n            keyPassword "android"\n        }' build.gradle
+          sed -i 's/signingConfig signingConfigs.debug/signingConfig signingConfigs.release/g' build.gradle
 
-      - name: 🔨 Build Debug APK
+      - name: 🔨 Build Standalone Release APK
         run: |
           cd android
           chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon -x test -x lint -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
+          ./gradlew assembleRelease --no-daemon -x test -x lint -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
 
-      - name: 🚀 Upload APK Artifact
+      - name: 🚀 Upload Standalone APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Bluesky-Android-Debug
-          path: android/app/build/outputs/apk/debug/*.apk
+          name: Bluesky-Standalone-App
+          path: android/app/build/outputs/apk/release/*.apk
           retention-days: 14
