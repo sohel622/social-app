@@ -82,16 +82,29 @@ jobs:
           }
           EOF
 
-      - name: 🛠️ Clean Expo Config & Prebuild
+      - name: 🛠️ Setup Dummy Native Modules & Prebuild
         run: |
-          node -e '
-            const fs = require("fs");
-            if (fs.existsSync("app.config.js")) {
-              let code = fs.readFileSync("app.config.js", "utf8");
-              code = code.replace(/plugins:\s*\[[\s\S]*?\],?/, "plugins: [],");
-              fs.writeFileSync("app.config.js", code);
-            }
-          '
+          mkdir -p plugins/starterPackAppClipExtension
+          cat << 'EOF' > plugins/starterPackAppClipExtension/withClipEntitlements.js
+          module.exports = function(config) { return config; };
+          EOF
+          cat << 'EOF' > plugins/starterPackAppClipExtension/withStarterPackAppClip.js
+          module.exports = function(config) { return config; };
+          EOF
+
+          mkdir -p plugins/shareExtension
+          cat << 'EOF' > plugins/shareExtension/withShareExtension.js
+          module.exports = function(config) { return config; };
+          EOF
+          cat << 'EOF' > plugins/shareExtension/withExtensionEntitlements.js
+          module.exports = function(config) { return config; };
+          EOF
+
+          mkdir -p plugins/notificationsExtension
+          cat << 'EOF' > plugins/notificationsExtension/withNotificationsExtension.js
+          module.exports = function(config) { return config; };
+          EOF
+
           pnpm exec expo prebuild --platform android --clean --no-install
 
       - name: 🔑 Configure Android Directories & Keystore
