@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: ⬇️ Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 5
 
       - name: ☕ Setup Java 17
         uses: actions/setup-java@v4
@@ -82,30 +84,19 @@ jobs:
           }
           EOF
 
-      - name: 🛠️ Prebuild Android Project
+      - name: 🛠️ Setup Local EAS CLI
+        run: |
+          pnpm add -g eas-cli
+
+      - name: 🔨 Build Android APK via Local EAS
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          pnpm exec expo prebuild --platform android --clean --no-install
+          npx eas-cli build --platform android --profile development --local --output ./bluesky.apk --non-interactive
 
-      - name: 🔑 Configure Android Directories & Keystore
-        run: |
-          mkdir -p android/app
-          cp google-services.json android/app/google-services.json || true
-          cd android/app
-          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || true
-
-      - name: 🔨 Build Standalone APK
-        env:
-          NODE_OPTIONS: "--max-old-space-size=4096"
-        run: |
-          cd android
-          chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon -x test -x lint -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
-
-      - name: 🚀 Upload Standalone APK Artifact
+      - name: 🚀 Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Bluesky-Standalone-App
-          path: android/app/build/outputs/apk/debug/*.apk
+          name: Bluesky-Standalone-APK
+          path: ./bluesky.apk
           retention-days: 14
