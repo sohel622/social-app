@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   build-apk:
-    name: Build Standalone Android APK
+    name: Build Standalone Production Android APK
     runs-on: ubuntu-latest
     steps:
       - name: ⬇️ Checkout Repository
@@ -44,10 +44,10 @@ jobs:
         run: |
           pnpm intl:compile || true
 
-      - name: ⚙️ Setup Local Environment & Google Services
+      - name: ⚙️ Setup Production Environment & Google Services
         run: |
           touch .env
-          echo "EXPO_PUBLIC_ENV=development" >> .env
+          echo "EXPO_PUBLIC_ENV=production" >> .env
           echo "BSKY_SERVICE=https://bsky.social" >> .env
           
           cat << 'EOF' > google-services.json
@@ -82,7 +82,7 @@ jobs:
           }
           EOF
 
-      - name: 🛠️ Neutralize All Custom Plugins & Prebuild
+      - name: 🛠️ Neutralize Custom Plugins & Prebuild
         run: |
           create_dummy() {
             mkdir -p "$(dirname "$1")"
@@ -108,40 +108,50 @@ jobs:
 
           pnpm exec expo prebuild --platform android --clean --no-install
 
-      - name: 🔑 Configure Android Directories & Keystore
+      - name: 🔑 Configure Keystore for Release Signing
         run: |
           mkdir -p android/app
           cp google-services.json android/app/google-services.json || true
           cd android/app
-          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || true
+          keytool -genkey -v -keystore release.keystore -storepass android -alias androidreleasekey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Release,O=Android,C=US" || true
 
-      - name: 🔨 Build Standalone APK
+      - name: 🔨 Compile Production Standalone APK (Bundled JS)
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"
         run: |
           cd android
           chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon -x test -x lint -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
+          ./gradlew assembleRelease --no-daemon -x test -x lint \
+            -Pandroid.injected.signing.store.file=release.keystore \
+            -Pandroid.injected.signing.store.password=android \
+            -Pandroid.injected.signing.key.alias=androidreleasekey \
+            -Pandroid.injected.signing.key.password=android \
+            -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
 
       - name: 📦 Prepare APK file
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk ./Bluesky-App.apk
+          APK_PATH=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            APK_PATH=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          fi
+          echo "Found APK at: $APK_PATH"
+          cp "$APK_PATH" ./Flashgram-Full.apk
 
-      - name: 🚀 Release Direct APK (No Zip)
+      - name: 🚀 Release Direct Full APK (No Zip)
         uses: softprops/action-gh-release@v2
         if: success()
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: Bluesky APK Build #${{ github.run_number }}
-          files: ./Bluesky-App.apk
+          name: Flashgram Full APK #${{ github.run_number }}
+          files: ./Flashgram-Full.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🗄️ Upload APK Artifact
+      - name: 🗄️ Upload APK Artifact Backup
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Bluesky-Standalone-App
-          path: ./Bluesky-App.apk
+          name: Flashgram-Standalone-APK
+          path: ./Flashgram-Full.apk
           retention-days: 14
           
